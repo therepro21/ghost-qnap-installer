@@ -12,6 +12,8 @@ https://raw.githubusercontent.com/therepro21/ghost-qnap-installer/main/qnap-temp
 
 Danach unter **App Templates → Custom Templates** den **Ghost QNAP Installer** bereitstellen. Anschließend `http://QNAP-IP:2380` öffnen und Ghost vollständig per Browser einrichten. Der Manager erzeugt zufällige Datenbankkennwörter und persistente Docker-Volumes automatisch.
 
+> **Datensicherheit:** Updates ersetzen ausschließlich Container. Beiträge und Einstellungen liegen in `ghost-qnap-mysql`, Bilder und Themes in `ghost-qnap-content`, Manager-Konfiguration und Update-Backups in `ghost-qnap-manager-data`. Diese drei Volumes in Container Station niemals löschen oder bei einer Bereinigung auswählen.
+
 ## Installation
 
 Das Repository ist privat. Deshalb zuerst mit einem GitHub Personal Access Token anmelden oder das Repository auf die QNAP klonen. Danach:

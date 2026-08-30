@@ -55,9 +55,10 @@ def home():
     s = load()
     if not s: return redirect("/setup")
     return html(f'''<h1>Ghost QNAP Manager</h1><p>Ghost: <a href="{s['url']}">{s['url']}</a></p>
+    <p><strong>Deine Inhalte bleiben in getrennten Docker-Volumes erhalten.</strong> In Container Station niemals die Volumes <code>ghost-qnap-mysql</code>, <code>ghost-qnap-content</code> oder <code>ghost-qnap-manager-data</code> löschen.</p>
     <form method="post" action="/apply"><label>Ghost-Adresse</label><input name="url" value="{s['url']}" required>
     <label>Port</label><input name="port" type="number" value="{s['port']}" required><button>Änderung übernehmen</button></form>
-    <form method="post" action="/update"><button>Backup und Ghost aktualisieren</button></form>''')
+    <form method="post" action="/update"><button>Backup und Ghost aktualisieren</button></form><p><small>Das Update löscht und ersetzt nur Container, niemals die persistenten Volumes.</small></p>''')
 
 @app.route("/setup", methods=["GET", "POST"])
 def setup():
