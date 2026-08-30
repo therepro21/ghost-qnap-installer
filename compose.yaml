@@ -1,0 +1,58 @@
+name: ghost-qnap
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ghost
+      MYSQL_USER: ghost
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - ${DATA_DIR}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ghost:
+    image: ${GHOST_IMAGE:-ghost:6-alpine}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${GHOST_PORT:-2368}:2368"
+    environment:
+      database__client: mysql
+      database__connection__host: db
+      database__connection__user: ghost
+      database__connection__password: ${DB_PASSWORD}
+      database__connection__database: ghost
+      url: ${GHOST_URL}
+    volumes:
+      - ${DATA_DIR}/ghost:/var/lib/ghost/content
+
+  manager:
+    build: ./manager
+    restart: unless-stopped
+    ports:
+      - "${MANAGER_BIND:-127.0.0.1}:${MANAGER_PORT:-2380}:2380"
+    environment:
+      MANAGER_PASSWORD: ${MANAGER_PASSWORD}
+      ENV_FILE: /project/.env
+      PROJECT_DIR: /project
+    volumes:
+      - ./:/project
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  publisher:
+    build: ./publisher
+    profiles: ["tools"]
+    environment:
+      GHOST_ADMIN_URL: ${GHOST_ADMIN_URL:-${GHOST_URL}}
+      GHOST_ADMIN_KEY: ${GHOST_ADMIN_KEY:-}
+    volumes:
+      - ./stories:/stories:ro

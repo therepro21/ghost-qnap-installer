@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
+cmd="${1:-help}"
+case "$cmd" in
+  status) docker compose ps ;;
+  logs) docker compose logs -f --tail=200 ;;
+  update)
+    ./ghostctl backup
+    docker compose pull
+    docker compose build --pull manager
+    docker compose up -d --force-recreate
+    ;;
+  backup)
+    mkdir -p backups
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    . ./.env
+    docker compose exec -T db mysqldump -uroot -p"$DB_ROOT_PASSWORD" --single-transaction ghost | gzip > "backups/ghost-$stamp.sql.gz"
+    tar -czf "backups/content-$stamp.tar.gz" -C "$DATA_DIR" ghost
+    echo "Backup: backups/*-$stamp.*"
+    ;;
+  restore)
+    [ "${2:-}" ] && [ "${3:-}" ] || { echo "Verwendung: ./ghostctl restore backups/ghost-DATUM.sql.gz backups/content-DATUM.tar.gz"; exit 2; }
+    . ./.env
+    docker compose stop ghost
+    gzip -dc "$2" | docker compose exec -T db mysql -uroot -p"$DB_ROOT_PASSWORD" ghost
+    tar -xzf "$3" -C "$DATA_DIR"
+    docker compose start ghost
+    ;;
+  domain)
+    [ "${2:-}" ] || { echo "Verwendung: ./ghostctl domain https://blog.example.de"; exit 2; }
+    sed -i "s|^GHOST_URL=.*|GHOST_URL=${2%/}|" .env
+    docker compose up -d --force-recreate ghost
+    ;;
+  *) echo "Verwendung: ./ghostctl {status|logs|update|backup|restore SQL CONTENT|domain URL}" ;;
+esac

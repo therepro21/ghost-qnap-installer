@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
+[ "${1:-}" ] || { echo "Verwendung: ./publish-story stories/beitrag.json"; exit 2; }
+case "$1" in stories/*) ;; *) echo "Die JSON-Datei muss im Ordner stories/ liegen." >&2; exit 2;; esac
+docker compose --profile tools run --rm publisher "/$1"

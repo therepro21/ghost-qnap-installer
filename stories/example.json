@@ -1,0 +1,9 @@
+{
+  "title": "Ein neuer Beitrag",
+  "html": "<p>Der Text.</p><img src=\"{{image:/stories/beispiel.jpg}}\" alt=\"Bildbeschreibung\">",
+  "tags": ["Beispiel", "QNAP"],
+  "excerpt": "Eine kurze Zusammenfassung.",
+  "feature_image": "/stories/beispiel.jpg",
+  "images": [{"path": "/stories/beispiel.jpg"}],
+  "status": "draft"
+}
