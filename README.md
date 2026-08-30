@@ -2,6 +2,8 @@
 
 Ein-Befehl-Installation von Ghost 6 mit MySQL 8 für QNAP Container Station. Unterstützt Intel/AMD64 und ARM64, speichert alle Nutzdaten dauerhaft auf dem NAS und enthält einen browserbasierten Konfigurationsmanager.
 
+> **Inoffizielles Community-Projekt:** Dieses Projekt ist weder mit der Ghost Foundation, QNAP Systems, Docker noch Oracle verbunden und wird von diesen Unternehmen oder Organisationen nicht unterstützt, zertifiziert oder empfohlen. Produktnamen werden ausschließlich beschreibend verwendet.
+
 ## Installation ohne SSH über QNAP App Templates
 
 In Container Station 3 unter **Preferences → App Templates** den benutzerdefinierten Katalog aktivieren und diese URL eintragen:
@@ -53,3 +55,9 @@ In Ghost unter **Settings → Integrations → Add custom integration** eine Int
 ## Architekturhinweis
 
 Unterstützt werden `x86_64/amd64` und `aarch64/arm64`. Alte 32-Bit-ARM-QNAPs werden bewusst abgelehnt, da der aktuelle produktive MySQL/Ghost-Stack dafür nicht verlässlich verfügbar ist.
+
+## Lizenz und Haftung
+
+Der eigene Code dieses Installers steht unter der [MIT-Lizenz](LICENSE). Lizenzen und Markenhinweise verwendeter Komponenten stehen in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Die Software wird ohne Garantie bereitgestellt. Vor Installation, Update, Wiederherstellung oder Bereinigung ist ein zusätzliches, vom NAS getrenntes Backup empfohlen. Der integrierte Update-Backupmechanismus ersetzt keine vollständige externe Datensicherungsstrategie.
