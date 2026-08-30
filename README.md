@@ -2,6 +2,16 @@
 
 Ein-Befehl-Installation von Ghost 6 mit MySQL 8 für QNAP Container Station. Unterstützt Intel/AMD64 und ARM64, speichert alle Nutzdaten dauerhaft auf dem NAS und enthält einen browserbasierten Konfigurationsmanager.
 
+## Installation ohne SSH über QNAP App Templates
+
+In Container Station 3 unter **Preferences → App Templates** den benutzerdefinierten Katalog aktivieren und diese URL eintragen:
+
+```text
+https://raw.githubusercontent.com/therepro21/ghost-qnap-installer/main/qnap-template.json
+```
+
+Danach unter **App Templates → Custom Templates** den **Ghost QNAP Installer** bereitstellen. Anschließend `http://QNAP-IP:2380` öffnen und Ghost vollständig per Browser einrichten. Der Manager erzeugt zufällige Datenbankkennwörter und persistente Docker-Volumes automatisch.
+
 ## Installation
 
 Das Repository ist privat. Deshalb zuerst mit einem GitHub Personal Access Token anmelden oder das Repository auf die QNAP klonen. Danach:
