@@ -42,14 +42,17 @@ def page(message=""):
     url = env.get("GHOST_URL", "")
     https = "checked" if url.startswith("https://") else ""
     esc = lambda s: str(s).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+    def help_label(title, de, en):
+        return f'''<div class="field-label"><label>{title}</label><details class="help"><summary aria-label="Hilfe / Help">?</summary><div><p><strong>Deutsch:</strong> {de}</p><p><strong>English:</strong> {en}</p></div></details></div>'''
     return f'''<!doctype html><html lang="de"><meta name="viewport" content="width=device-width"><title>Ghost QNAP Manager</title>
-    <style>body{{font:16px system-ui;background:#f4f5f7;color:#20242b;margin:0}}main{{max-width:650px;margin:6vh auto;background:white;padding:32px;border-radius:18px;box-shadow:0 8px 32px #0002}}label{{display:block;margin:18px 0 7px;font-weight:650}}input{{box-sizing:border-box;width:100%;padding:12px;border:1px solid #bbc2cc;border-radius:9px;font-size:16px}}button{{margin-top:24px;padding:13px 20px;border:0;border-radius:9px;background:#30cf82;color:#10251a;font-weight:750;font-size:16px;cursor:pointer}}small{{color:#647080}}.ok{{background:#e4f8ed;padding:12px;border-radius:8px}}</style>
+    <style>body{{font:16px system-ui;background:#f4f5f7;color:#20242b;margin:0}}main{{max-width:680px;margin:6vh auto;background:white;padding:32px;border-radius:18px;box-shadow:0 8px 32px #0002}}.field-label{{display:flex;align-items:center;gap:8px;margin:18px 0 7px;font-weight:650}}input{{box-sizing:border-box;width:100%;padding:12px;border:1px solid #bbc2cc;border-radius:9px;font-size:16px}}button{{margin-top:24px;padding:13px 20px;border:0;border-radius:9px;background:#30cf82;color:#10251a;font-weight:750;font-size:16px;cursor:pointer}}small{{color:#647080}}.ok{{background:#e4f8ed;padding:12px;border-radius:8px}}details.help{{position:relative;display:inline-block}}details.help summary{{display:grid;place-items:center;width:21px;height:21px;border-radius:50%;background:#e7ebef;cursor:pointer;list-style:none;font-size:13px}}details.help summary::-webkit-details-marker{{display:none}}details.help div{{position:absolute;z-index:10;left:28px;top:-8px;width:min(420px,70vw);padding:14px;background:#17212b;color:white;border-radius:10px;box-shadow:0 8px 24px #0004;font-weight:400;line-height:1.4}}details.help p{{margin:0 0 9px}}details.help p:last-child{{margin:0}}@media(max-width:600px){{main{{margin:0;padding:22px;border-radius:0;min-height:100vh}}details.help div{{position:fixed;left:5vw;right:5vw;top:15vh;width:auto}}}}</style>
     <main><h1>Ghost QNAP Manager</h1>{f'<p class="ok">{esc(message)}</p>' if message else ''}
-    <p>Interne IP oder öffentliche Domain eintragen. Ghost wird beim Übernehmen kontrolliert neu erstellt; Inhalte und Datenbank bleiben erhalten.</p>
-    <form method="post" action="/save"><label>Ghost-Adresse</label><input name="url" value="{esc(url)}" placeholder="http://192.168.1.100:2368" required>
-    <small>Mit Protokoll, ohne abschließenden Schrägstrich. Für eine Domain z. B. https://blog.example.de</small>
-    <label>Ghost-Port im LAN</label><input name="port" type="number" min="1" max="65535" value="{esc(env.get('GHOST_PORT','2368'))}" required>
-    <button>Speichern und Ghost neu erstellen</button></form>
+    <p>Interne IP oder öffentliche Domain eintragen. Klicke auf <strong>?</strong> für Erklärungen auf Deutsch und Englisch. Inhalte und Datenbank bleiben beim Übernehmen erhalten.</p>
+    <form method="post" action="/save">{help_label('Ghost-Adresse / Ghost URL', 'Ohne Domain meistens <code>http://QNAP-IP:2368</code>. Die IP steht in QTS unter Systemsteuerung → Netzwerk & virtueller Switch oder in Qfinder Pro. Mit eingerichtetem Reverse Proxy und Zertifikat meistens <code>https://blog.example.de</code>. Immer mit <code>http://</code> oder <code>https://</code>, ohne Schrägstrich am Ende.', 'Without a domain this is usually <code>http://QNAP-IP:2368</code>. Find the IP in QTS under Control Panel → Network & Virtual Switch or in Qfinder Pro. With a configured reverse proxy and certificate use something like <code>https://blog.example.com</code>. Always include <code>http://</code> or <code>https://</code> and omit the trailing slash.')}
+    <input name="url" value="{esc(url)}" placeholder="http://192.168.1.100:2368" required>
+    {help_label('Ghost-Port im LAN / LAN port', 'Standard und meistens richtig: <code>2368</code>. Nur ändern, wenn der Port bereits belegt ist. Bei interner IP dieselbe Nummer auch hinter dem Doppelpunkt in der Ghost-Adresse verwenden.', 'The standard and usually correct value is <code>2368</code>. Change it only if already occupied. When using a local IP, put the same number after the colon in the Ghost URL.')}
+    <input name="port" type="number" min="1" max="65535" value="{esc(env.get('GHOST_PORT','2368'))}" required>
+    <button>Speichern und Ghost neu erstellen / Save and recreate</button></form>
     <p><small>Hinweis: Für HTTPS muss der QNAP-Reverse-Proxy samt Zertifikat ebenfalls auf die Domain eingerichtet sein.</small></p></main></html>'''
 
 @app.get("/")
@@ -67,5 +70,5 @@ def save():
         return page("Gespeichert, aber der Neustart schlug fehl: " + result.stderr[-400:]), 500
     return redirect("/?message=Konfiguration+übernommen.")
 
-app.run(host="0.0.0.0", port=2380)
-
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=2380)
