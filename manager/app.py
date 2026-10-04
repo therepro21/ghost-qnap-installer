@@ -12,6 +12,8 @@ def auth_ok():
 
 @app.before_request
 def require_auth():
+    if request.method == 'POST' and request.headers.get('Origin') != request.host_url.rstrip('/'):
+        return Response('Ungültige Anfrage / Invalid request origin', 403)
     if not auth_ok():
         return Response("Anmeldung erforderlich", 401, {"WWW-Authenticate": 'Basic realm="Ghost QNAP Manager"'})
 

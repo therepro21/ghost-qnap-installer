@@ -1,10 +1,22 @@
 import gzip, hmac, json, os, re, secrets, subprocess
 from datetime import datetime
+from threading import Lock
+from urllib.parse import urlsplit
+import time
 from html import escape
-from flask import Flask, request, Response, redirect
+from flask import Flask, request, Response, redirect, send_from_directory
 
 app = Flask(__name__)
 STATE = "/data/settings.json"
+operation_lock = Lock()
+
+def save_state(s):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    temporary = STATE + '.tmp'
+    with open(temporary, 'w', encoding='utf-8') as f:
+        json.dump(s, f)
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, STATE)
 
 def load():
     try:
@@ -18,23 +30,45 @@ def ensure(name, *args):
     run("rm", "-f", name, check=False)
     run("run", "-d", "--name", name, "--restart", "unless-stopped", *args)
 
-def deploy(s):
+def deploy(s, recreate_db=False):
+    # Download before replacing any running container.
+    for image in ('mysql:8.4', 'ghost:6-alpine'):
+        if run('image', 'inspect', image, check=False).returncode:
+            run('pull', image)
     run("network", "create", "ghost-qnap", check=False)
     run("volume", "create", "ghost-qnap-mysql")
     run("volume", "create", "ghost-qnap-content")
-    ensure("ghost-qnap-db", "--network", "ghost-qnap", "-e", "MYSQL_DATABASE=ghost", "-e", "MYSQL_USER=ghost",
+    existing = run('inspect', 'ghost-qnap-db', check=False).returncode == 0
+    if recreate_db or not existing:
+        ensure("ghost-qnap-db", "--network", "ghost-qnap", "-e", "MYSQL_DATABASE=ghost", "-e", "MYSQL_USER=ghost",
            "-e", f"MYSQL_PASSWORD={s['db_password']}", "-e", f"MYSQL_ROOT_PASSWORD={s['root_password']}",
-           "-v", "ghost-qnap-mysql:/var/lib/mysql", "mysql:8.4")
+               "-v", "ghost-qnap-mysql:/var/lib/mysql", "mysql:8.4")
+    run('start', 'ghost-qnap-db')
+    for _ in range(120):
+        ready = run('exec', '-e', f"MYSQL_PWD={s['db_password']}", 'ghost-qnap-db',
+                    'mysql', '-ughost', '-Dghost', '-e', 'SELECT 1', check=False)
+        if ready.returncode == 0:
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError('MySQL nicht bereit / MySQL did not become ready')
     ensure("ghost-qnap-app", "--network", "ghost-qnap", "-p", f"{s['port']}:2368",
            "-e", "database__client=mysql", "-e", "database__connection__host=ghost-qnap-db",
            "-e", "database__connection__user=ghost", "-e", f"database__connection__password={s['db_password']}",
            "-e", "database__connection__database=ghost", "-e", f"url={s['url']}",
            "-v", "ghost-qnap-content:/var/lib/ghost/content", "ghost:6-alpine")
+    for _ in range(120):
+        ready = run('exec', 'ghost-qnap-app', 'node', '-e',
+                    "fetch('http://127.0.0.1:2368/').then(()=>process.exit(0)).catch(()=>process.exit(1))", check=False)
+        if ready.returncode == 0:
+            return
+        time.sleep(2)
+    raise RuntimeError('Ghost nicht erreichbar / Ghost did not become ready')
 
 def backup(s):
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     os.makedirs("/data/backups", exist_ok=True)
-    dump = run("exec", "ghost-qnap-db", "mysqldump", "-uroot", f"-p{s['root_password']}", "--single-transaction", "ghost").stdout.encode()
+    dump = run("exec", '-e', f"MYSQL_PWD={s['root_password']}", "ghost-qnap-db", "mysqldump", "-uroot", "--single-transaction", '--no-tablespaces', "ghost").stdout.encode()
     with gzip.open(f"/data/backups/ghost-{stamp}.sql.gz", "wb") as f: f.write(dump)
     run("run", "--rm", "-v", "ghost-qnap-content:/source:ro", "-v", "ghost-qnap-manager-data:/backup",
         "alpine:3.22", "tar", "-czf", f"/backup/backups/content-{stamp}.tar.gz", "-C", "/source", ".")
@@ -42,10 +76,37 @@ def backup(s):
 @app.before_request
 def auth():
     s = load()
-    if not s or request.path == "/setup": return None
+    if request.method == 'POST':
+        origin = request.headers.get('Origin')
+        if origin != request.host_url.rstrip('/'):
+            return Response('Ungültige Anfrage / Invalid request origin', 403)
+        if not operation_lock.acquire(blocking=False):
+            return Response('Vorgang läuft bereits / Operation already running', 409)
+        request.operation_locked = True
+    if not s:
+        if request.path not in ('/', '/setup'):
+            return Response('Zuerst einrichten / Complete setup first', 403)
+        return None
     a = request.authorization
     if not a or not hmac.compare_digest(a.password, s["manager_password"]):
         return Response("Anmeldung erforderlich", 401, {"WWW-Authenticate": 'Basic realm="Ghost QNAP Manager"'})
+
+@app.teardown_request
+def unlock(error=None):
+    if getattr(request, 'operation_locked', False):
+        operation_lock.release()
+
+@app.after_request
+def secure_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+@app.errorhandler(subprocess.CalledProcessError)
+@app.errorhandler(RuntimeError)
+def operation_error(error):
+    return html('<h1>Vorgang fehlgeschlagen / Operation failed</h1><p>Bitte Container-Logs in Container Station prüfen. Datenvolumes bleiben erhalten. / Check container logs. Data volumes remain intact.</p><a href="/">Zurück / Back</a>'), 500
 
 def html(body):
     return f'''<!doctype html><html lang="de"><meta name="viewport" content="width=device-width"><title>Ghost QNAP Setup</title>
@@ -57,7 +118,10 @@ def label(text, de, en):
 def values(form):
     url = form.get("url", "").strip().rstrip("/")
     port = form.get("port", "").strip()
-    if not re.match(r"^https?://[^\s/]+(?::\d+)?$", url) or not port.isdigit() or not 1 <= int(port) <= 65535:
+    parsed = urlsplit(url)
+    if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password
+        or parsed.path or parsed.query or parsed.fragment or re.search(r'[\s<>"\x00-\x1f]', url)
+        or not port.isdigit() or not 1 <= int(port) <= 65535 or int(port) == 2380):
         raise ValueError("Ungültige Ghost-Adresse oder Port / Invalid Ghost URL or port")
     return url, int(port)
 
@@ -72,19 +136,20 @@ def home():
     <input name="url" value="{url}" placeholder="http://192.168.1.100:2368" required>
     {label('Ghost-Port', 'Der freie Netzwerk-Port auf der QNAP. Standard und meistens richtig: <code>2368</code>. Nur ändern, wenn dieser Port bereits belegt ist. Bei einer Änderung muss dieselbe Portnummer auch in der Ghost-Adresse stehen.', 'The free network port on the QNAP. The standard and usually correct value is <code>2368</code>. Change it only if that port is already in use. If changed, the Ghost URL must contain the same port.')}
     <input name="port" type="number" min="1" max="65535" value="{port}" required><button>Änderung übernehmen / Apply changes</button></form>
-    <form method="post" action="/update"><button>Backup und Ghost aktualisieren</button></form><p><small>Das Update löscht und ersetzt nur Container, niemals die persistenten Volumes.</small></p>''')
+    <form method="post" action="/update"><button>Backup und Ghost aktualisieren / Backup and update</button></form><p><a href="/backups">Backups herunterladen / Download backups</a></p><p><small>Das Update löscht und ersetzt nur Container, niemals die persistenten Volumes.</small></p>''')
 
 @app.route("/setup", methods=["GET", "POST"])
 def setup():
     if load(): return redirect("/")
     if request.method == "POST":
+        if len(request.form.get('password', '')) < 12:
+            return Response('Kennwort mindestens 12 Zeichen / Password minimum 12 characters', 400)
         try: url, port = values(request.form)
         except ValueError as e: return html(f"<h1>Fehler / Error</h1><p>{escape(str(e))}</p><p><a href='/setup'>Zurück / Back</a></p>"), 400
         s = {"url": url, "port": port,
              "manager_password": request.form["password"], "db_password": secrets.token_urlsafe(32),
              "root_password": secrets.token_urlsafe(32)}
-        os.makedirs("/data", exist_ok=True)
-        with open(STATE, "w", encoding="utf-8") as f: json.dump(s, f)
+        save_state(s)
         deploy(s); return redirect("/")
     return html(f'''<h1>Ghost auf QNAP einrichten</h1><p>Für den Start ohne Domain die interne QNAP-IP verwenden. Klicke auf <strong>?</strong> für eine Erklärung auf Deutsch und Englisch.</p>
     <form method="post">{label('Ghost-Adresse / Ghost URL', 'Die Adresse, die du später im Browser eingibst. Meistens zuerst <code>http://DEINE-QNAP-IP:2368</code>, zum Beispiel <code>http://192.168.1.100:2368</code>. Deine QNAP-IP findest du in QTS unter Systemsteuerung → Netzwerk & virtueller Switch oder in Qfinder Pro. Wenn bereits Domain, Zertifikat und Reverse Proxy eingerichtet sind, verwende <code>https://deine-domain.de</code>.', 'The address you will enter in your browser. Initially this is usually <code>http://YOUR-QNAP-IP:2368</code>, for example <code>http://192.168.1.100:2368</code>. Find the QNAP IP in QTS under Control Panel → Network & Virtual Switch or in Qfinder Pro. If domain, certificate and reverse proxy are already configured, use <code>https://your-domain.com</code>.')}
@@ -100,12 +165,33 @@ def apply():
     try: url, port = values(request.form)
     except ValueError as e: return html(f"<h1>Fehler / Error</h1><p>{escape(str(e))}</p><p><a href='/'>Zurück / Back</a></p>"), 400
     s = load(); s["url"] = url; s["port"] = port
-    with open(STATE, "w", encoding="utf-8") as f: json.dump(s, f)
-    deploy(s); return redirect("/")
+    deploy(s); save_state(s); return redirect("/")
 
 @app.post("/update")
 def update():
-    s = load(); backup(s); run("pull", "ghost:6-alpine"); run("pull", "mysql:8.4"); deploy(s); return redirect("/")
+    s = load()
+    run('stop', 'ghost-qnap-app')
+    try:
+        backup(s)
+        run('pull', 'ghost:6-alpine')
+        run('pull', 'mysql:8.4')
+        deploy(s, recreate_db=True)
+    finally:
+        run('start', 'ghost-qnap-app', check=False)
+    return redirect('/')
+
+@app.get('/backups')
+def backups():
+    directory = '/data/backups'
+    files = sorted(os.listdir(directory), reverse=True) if os.path.isdir(directory) else []
+    links = ''.join(f'<li><a href="/backups/{escape(name)}">{escape(name)}</a></li>' for name in files if re.fullmatch(r'(ghost|content)-[\d-]+\.(sql|tar)\.gz', name))
+    return html(f'<h1>Backups</h1><p>Beide Dateien eines Zeitpunkts herunterladen und außerhalb des NAS speichern. / Download both files from the same timestamp and store outside the NAS.</p><ul>{links}</ul><a href="/">Zurück / Back</a>')
+
+@app.get('/backups/<name>')
+def download_backup(name):
+    if not re.fullmatch(r'(ghost|content)-[\d-]+\.(sql|tar)\.gz', name):
+        return Response('Not found', 404)
+    return send_from_directory('/data/backups', name, as_attachment=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=2380)

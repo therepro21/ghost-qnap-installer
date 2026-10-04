@@ -130,6 +130,12 @@ Nur die Ghost-Seite über den Reverse Proxy veröffentlichen. Den Manager-Port `
 
 ## Updates und Datensicherheit
 
+Der Manager wartet beim Start auf MySQL und Ghost. Bei einer Änderung der URL oder des Ports bleibt der bestehende Datenbankcontainer bestehen. Gleichzeitige Änderungs- und Update-Anfragen werden abgewiesen, damit Vorgänge sich nicht überschneiden.
+
+Unter **Backups herunterladen** können SQL- und Inhaltsbackup heruntergeladen werden. Immer die beiden Dateien mit derselben Zeitangabe außerhalb der QNAP speichern. Während des Update-Backups ist Ghost kurz gestoppt, damit Datenbank und Dateien zusammenpassen. Schlägt das Backup fehl, wird das Update abgebrochen und Ghost wieder gestartet.
+
+Um diese Verbesserungen auf einer bereits installierten QNAP zu erhalten, in Container Station ausschließlich den **Manager-Container** mit dem frisch heruntergeladenen Image `ghcr.io/therepro21/ghost-qnap-manager:latest` neu erstellen. Die vorhandenen Zuordnungen `/data` → `ghost-qnap-manager-data` und `/var/run/docker.sock` beibehalten. Keine Volumes löschen. Die Schaltfläche im Manager aktualisiert Ghost und MySQL, nicht den Manager selbst.
+
 Im Manager **Backup und Ghost aktualisieren** verwenden. Der Ablauf:
 
 1. SQL-Backup der Ghost-Datenbank erstellen.
@@ -262,6 +268,12 @@ A domain also requires DNS, a TLS certificate, and a reverse proxy:
 Expose only Ghost through the reverse proxy. Never expose manager port `2380`.
 
 ## Updates and persistent data
+
+The manager waits for MySQL and Ghost to become ready. URL and port changes preserve the existing database container. Concurrent changes and updates are rejected to avoid overlapping operations.
+
+Use **Download backups** to download SQL and content backups. Store both files with the same timestamp outside the NAS. Ghost is briefly stopped for the update backup so database and files are consistent. A failed backup aborts the update and restarts Ghost.
+
+To receive these improvements on an existing QNAP installation, recreate only the **manager container** in Container Station using a freshly downloaded `ghcr.io/therepro21/ghost-qnap-manager:latest` image. Keep `/data` mapped to `ghost-qnap-manager-data` and keep the Docker socket mount. Do not delete volumes. The manager update button updates Ghost and MySQL, not the manager itself.
 
 Use **Backup and update Ghost** in the manager. It creates database and content backups, pulls compatible images, replaces only containers, and reconnects the existing volumes.
 
